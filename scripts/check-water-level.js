@@ -34,6 +34,13 @@ async function fetchStationData() {
   if (!res.ok) throw new Error(`API ตอบกลับผิดพลาด: ${res.status}`);
 
   const data = await res.json();
+
+  // ---------- DEBUG: ดูโครงสร้างจริงของ JSON ----------
+  console.log('Top-level type:', Array.isArray(data) ? 'array' : typeof data);
+  console.log('Top-level keys:', Object.keys(data));
+  console.log('First 1500 chars of raw JSON:', JSON.stringify(data).substring(0, 1500));
+  // ---------------------------------------------------
+
   const list = Array.isArray(data) ? data : (data.data || data.waterlevel || []);
 
   let found = list.find(item => item.station?.tele_station_oldcode === CONFIG.STATION_OLD_CODE);
