@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบติดตามระดับน้ำสถานีบางปะกง</title>
+    <!-- ใช้ Tailwind CSS เพื่อความสวยงามแบบง่าย -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600&display=swap" rel="stylesheet">
+    <style> body { font-family: 'Sarabun', sans-serif; } </style>
+</head>
+<body class="bg-slate-100 flex items-center justify-center min-h-screen">
+
+    <div class="bg-white p-8 rounded-2xl shadow-lg max-w-md w-full mx-4">
+        <h1 class="text-2xl font-bold text-slate-800 mb-2 text-center">🌊 ระดับน้ำบางปะกง</h1>
+        <p class="text-sm text-slate-500 text-center mb-6">เชื่อมต่อข้อมูลจากคลังข้อมูลน้ำแห่งชาติ</p>
+
+        <div id="loading" class="text-center py-8 text-slate-400">กำลังโหลดข้อมูล...</div>
+
+        <div id="content" class="hidden space-y-4">
+            <div class="p-4 rounded-xl bg-slate-50 border border-slate-100 space-y-2">
+                <div class="flex justify-between text-sm text-slate-600">
+                    <span>สถานีวัด:</span>
+                    <span id="stationName" class="font-semibold text-slate-800">-</span>
+                </div>
+                <div class="flex justify-between text-sm text-slate-600">
+                    <span>ระดับน้ำปัจจุบัน:</span>
+                    <span id="waterLevel" class="font-semibold text-slate-800">-</span>
+                </div>
+                <div class="flex justify-between text-sm text-slate-600">
+                    <span>ระดับตลิ่ง:</span>
+                    <span id="bankLevel" class="font-semibold text-slate-800">-</span>
+                </div>
+                <div class="flex justify-between text-sm text-slate-600">
+                    <span>ระยะห่างจากตลิ่ง:</span>
+                    <span id="diffCm" class="font-bold">-</span>
+                </div>
+            </div>
+
+            <div id="alertBox" class="p-4 rounded-xl text-center font-semibold text-sm hidden">
+                <!-- สถานะเตือนภัยจะแสดงตรงนี้ -->
+            </div>
+        </div>
+
+        <button onclick="fetchData()" class="mt-6 w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-xl transition duration-200">
+            🔄รีเฟรชข้อมูล
+        </button>
+    </div>
+
+    <script>
+        // ใส่ URL ของ Google Apps Script Web App ที่นี่
+        const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbx9ADDbG8tUXvjSlgJYM4M7iDtSoSWv8QEKMmPqK0d3__2U5brNCoYeqtFJJGtA7C4GXQ/exec';
+
+        async function fetchData() {
+            document.getElementById('loading').classList.remove('hidden');
+            document.getElementById('content').classList.add('hidden');
+
+            try {
+                const response = await fetch(GAS_WEB_APP_URL);
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    document.getElementById('stationName').innerText = data.station_name;
+                    document.getElementById('waterLevel').innerText = data.water_level + ' เมตร';
+                    document.getElementById('bankLevel').innerText = data.bank_left + ' เมตร';
+                    
+                    let diffElement = document.getElementById('diffCm');
+                    diffElement.innerText = data.diff_cm + ' ซม.';
+
+                    let alertBox = document.getElementById('alertBox');
+                    alertBox.classList.remove('hidden');
+
+                    if (data.is_alert) {
+                        alertBox.className = "p-4 rounded-xl text-center font-semibold text-sm bg-red-100 text-red-700 border border-red-200";
+                        alertBox.innerText = "🚨 วิกฤต: น้ำใกล้ล้นตลิ่งหรือล้นตลิ่งแล้ว!";
+                        diffElement.className = "font-bold text-red-600";
+                    } else {
+                        alertBox.className = "p-4 rounded-xl text-center font-semibold text-sm bg-emerald-100 text-emerald-700 border border-emerald-200";
+                        alertBox.innerText = "✅ สถานการณ์ปกติ";
+                        diffElement.className = "font-bold text-emerald-600";
+                    }
+
+                    document.getElementById('loading').classList.add('hidden');
+                    document.getElementById('content').classList.remove('hidden');
+                } else {
+                    alert('เกิดข้อผิดพลาด: ' + data.message);
+                }
+            } catch (error) {
+                alert('ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้');
+                console.error(error);
+            }
+        }
+
+        // โหลดข้อมูลทันทีเมื่อเปิดเว็บ
+        fetchData();
+    </script>
+</body>
+</html>
