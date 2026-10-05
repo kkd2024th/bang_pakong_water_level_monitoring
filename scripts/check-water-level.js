@@ -16,7 +16,7 @@ const CONFIG = {
   STATION_ID: 154,
 
   ALERT_THRESHOLD_M: 0.50,  // default = 0.5 (50 cm)
-  RESET_BUFFER_M: 0.20,
+  RESET_BUFFER_M: 0.30,  // ระบบจะจะไม่ส่งแจ้งเตือนรอบใหม่จนกว่าน้ำจะขึ้นสูงกว่า ALERT_THRESHOLD_M + RESET_BUFFER_M
 
   EMAILS_FILE: 'emails.txt',
   STATE_FILE: 'state.json',
