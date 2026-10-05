@@ -22,7 +22,7 @@ const CONFIG = {
   EMAIL_SUBJECT_PREFIX: '🚨 แจ้งเตือนระดับน้ำบางปะกง',
 
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
-  TELEGRAM_IDS_FILE: 'telegram_ids.txt'
+  TELEGRAM_IDS_FILE: 'telegram_ids.txt',
     
   LINE_CHANNEL_ACCESS_TOKEN: process.env.LINE_CHANNEL_ACCESS_TOKEN
 };
