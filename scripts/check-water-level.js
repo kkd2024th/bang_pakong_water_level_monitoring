@@ -14,7 +14,7 @@ const CONFIG = {
   STATION_OLD_CODE: 'BPK001',
   STATION_ID: 154,
 
-  ALERT_THRESHOLD_M: 0.3,  // default = 0.3 (30 cm before flooding)
+  ALERT_THRESHOLD_M: 1.3,  // default = 0.3 (30 cm before flooding)
   RESET_BUFFER_M: 0.20,
 
   EMAILS_FILE: 'emails.txt',
@@ -237,6 +237,11 @@ async function sendLineAlert(station, diffWlBank) {
   }
 }
 
+// ------------------------- ฟังก์ชันตรวจวันที่ -------------------------------
+function getTodayBangkok() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' }); // YYYY-MM-DD
+}
+
 // ------------------------- ฟังก์ชันหลัก -------------------------------
 async function main() {
   const station = await fetchStationData();
@@ -252,26 +257,35 @@ async function main() {
   console.log(`diff_wl_bank: ${diffWlBank} ม. | เคยแจ้งเตือนแล้ว: ${state.alertSent}`);
 
   if (diffWlBank <= CONFIG.ALERT_THRESHOLD_M) {
+    // อีเมล/Telegram: ส่งครั้งเดียวตอนข้ามเกณฑ์ (เหมือนเดิม)
     if (!state.alertSent) {
       const emails = await getEmailList();
       await sendAlertEmails(station, diffWlBank, emails);
-      await sendTelegramAlerts(station, diffWlBank);   // <-- เพิ่มบรรทัดนี้
-      await sendLineAlert(station, diffWlBank);   // <-- เพิ่มบรรทัดนี้
-      await setState({ alertSent: true });
-    } else {
-      console.log('เข้าเกณฑ์แต่เคยแจ้งเตือนไปแล้ว — ข้าม');
+      await sendTelegramAlerts(station, diffWlBank);
+      state.alertSent = true;
     }
+
+    // LINE: ส่งซ้ำได้วันละ 1 ครั้ง ตราบใดที่ยังเข้าเกณฑ์อยู่
+    const today = getTodayBangkok();
+    if (state.lineLastSentDate !== today) {
+      await sendLineAlert(station, diffWlBank);
+      state.lineLastSentDate = today;
+    } else {
+      console.log('LINE ส่งไปแล้ววันนี้ — ข้าม');
+    }
+
+    await setState(state);
+
   } else if (diffWlBank >= CONFIG.ALERT_THRESHOLD_M + CONFIG.RESET_BUFFER_M) {
-    if (state.alertSent) {
-      await setState({ alertSent: false });
-      console.log('ระดับน้ำกลับสู่ภาวะปกติ รีเซ็ตสถานะแล้ว');
+    if (state.alertSent || state.lineLastSentDate) {
+      await setState({ alertSent: false, lineLastSentDate: null });
+      console.log('ระดับน้ำกลับสู่ภาวะปกติ รีเซ็ตสถานะทั้งหมด');
     } else {
       console.log('ระดับน้ำปกติ');
     }
   } else {
     console.log('อยู่ในช่วงกันชน ไม่ทำอะไร');
   }
-}
 
 main().catch(err => {
   console.error('เกิดข้อผิดพลาด:', err);
