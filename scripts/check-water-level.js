@@ -15,7 +15,7 @@ const CONFIG = {
   STATION_OLD_CODE: 'BPK001',
   STATION_ID: 154,
 
-  ALERT_THRESHOLD_M: 1.30,  // default = 0.3 (30 cm)
+  ALERT_THRESHOLD_M: 0.30,  // default = 0.3 (30 cm)
   RESET_BUFFER_M: 0.20,
 
   EMAILS_FILE: 'emails.txt',
