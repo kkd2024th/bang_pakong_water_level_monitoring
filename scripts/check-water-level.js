@@ -19,7 +19,7 @@ const CONFIG = {
 
   EMAILS_FILE: 'emails.txt',
   STATE_FILE: 'state.json',
-  EMAIL_SUBJECT_PREFIX: '🚨 แจ้งเตือนระดับน้ำบางปะกง'
+  EMAIL_SUBJECT_PREFIX: '🚨 แจ้งเตือนระดับน้ำบางปะกง',
 
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
   TELEGRAM_IDS_FILE: 'telegram_ids.txt'
