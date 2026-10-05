@@ -23,6 +23,8 @@ const CONFIG = {
 
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
   TELEGRAM_IDS_FILE: 'telegram_ids.txt'
+    
+  LINE_CHANNEL_ACCESS_TOKEN: process.env.LINE_CHANNEL_ACCESS_TOKEN
 };
 
 // ------------------------- ดึงข้อมูลจาก ThaiWater API -------------------------------
@@ -187,6 +189,54 @@ async function sendTelegramAlerts(station, diffWlBank) {
   console.log(`ส่งแจ้งเตือน Telegram ไปยัง ${chatIds.length} รายชื่อเรียบร้อย`);
 }
 
+// ------------------------- ส่งข้อความแจ้งเตือนผ่าน LINE (Broadcast) -------------------------------
+async function sendLineAlert(station, diffWlBank) {
+  if (!CONFIG.LINE_CHANNEL_ACCESS_TOKEN) {
+    console.log('ไม่ได้ตั้งค่า LINE_CHANNEL_ACCESS_TOKEN');
+    return;
+  }
+
+  const stationNameTh = station.station.tele_station_name.th;
+  const provinceTh = station.geocode.province_name.th;
+  const amphoeTh = station.geocode.amphoe_name.th;
+  const minBank = station.station.min_bank;
+  const waterlevelNow = (minBank - diffWlBank).toFixed(2);
+  const now = new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
+
+  const message =
+    `🚨 แจ้งเตือนระดับน้ำใกล้ล้นตลิ่ง\n\n` +
+    `สถานี: ${stationNameTh}\n` +
+    `ที่ตั้ง: อ.${amphoeTh} จ.${provinceTh}\n` +
+    `ระดับน้ำปัจจุบัน (เทียบ MSL): ~${waterlevelNow} ม.\n` +
+    `ต่ำกว่าตลิ่ง: ${diffWlBank} ม.\n` +
+    `เกณฑ์แจ้งเตือนที่ตั้งไว้: ${CONFIG.ALERT_THRESHOLD_M} ม.\n` +
+    `เวลาที่ตรวจสอบ: ${now}\n\n` +
+    `ข้อมูลจาก: ThaiWater (สสน.)`;
+
+  try {
+    const res = await fetch('https://api.line.me/v2/bot/message/broadcast', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${CONFIG.LINE_CHANNEL_ACCESS_TOKEN}`
+      },
+      body: JSON.stringify({
+        messages: [{ type: 'text', text: message }]
+      })
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.log(`ส่ง LINE ไม่สำเร็จ: ${errText}`);
+      return;
+    }
+
+    console.log('ส่งแจ้งเตือน LINE (broadcast) เรียบร้อย');
+  } catch (e) {
+    console.log(`ส่ง LINE เกิดข้อผิดพลาด: ${e.message}`);
+  }
+}
+
 // ------------------------- ฟังก์ชันหลัก -------------------------------
 async function main() {
   const station = await fetchStationData();
@@ -206,6 +256,7 @@ async function main() {
       const emails = await getEmailList();
       await sendAlertEmails(station, diffWlBank, emails);
       await sendTelegramAlerts(station, diffWlBank);   // <-- เพิ่มบรรทัดนี้
+      await sendLineAlert(station, diffWlBank);   // <-- เพิ่มบรรทัดนี้
       await setState({ alertSent: true });
     } else {
       console.log('เข้าเกณฑ์แต่เคยแจ้งเตือนไปแล้ว — ข้าม');
