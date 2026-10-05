@@ -1,9 +1,10 @@
 /**
  * ====================================================================
- * ระบบแจ้งเตือนระดับน้ำสถานีบางปะกง — เวอร์ชันจบที่ GitHub 100%
- * - อ่านรายชื่ออีเมล: ไฟล์ emails.txt ใน repo
+ * ระบบแจ้งเตือนระดับน้ำสถานีบางปะกง — เวอร์ชันสมบูรณ์
+ * - อ่านรายชื่ออีเมล: ไฟล์ emails.txt
+ * - อ่านรายชื่อ Telegram chat_id: ไฟล์ telegram_ids.txt
+ * - LINE: ส่งแบบ Broadcast (ไม่ต้องเก็บ user id)
  * - จำสถานะ: ไฟล์ state.json ใน repo (commit กลับทุกครั้งที่รัน)
- * - ส่งอีเมล: Gmail SMTP ผ่าน nodemailer
  * ====================================================================
  */
 import nodemailer from 'nodemailer';
@@ -14,7 +15,7 @@ const CONFIG = {
   STATION_OLD_CODE: 'BPK001',
   STATION_ID: 154,
 
-  ALERT_THRESHOLD_M: 1.3,  // default = 0.3 (30 cm before flooding)
+  ALERT_THRESHOLD_M: 0.50,
   RESET_BUFFER_M: 0.20,
 
   EMAILS_FILE: 'emails.txt',
@@ -23,7 +24,7 @@ const CONFIG = {
 
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
   TELEGRAM_IDS_FILE: 'telegram_ids.txt',
-    
+
   LINE_CHANNEL_ACCESS_TOKEN: process.env.LINE_CHANNEL_ACCESS_TOKEN
 };
 
@@ -39,8 +40,6 @@ async function fetchStationData() {
   if (!res.ok) throw new Error(`API ตอบกลับผิดพลาด: ${res.status}`);
 
   const data = await res.json();
-
-  // โครงสร้างจริง: { waterlevel_data: { result: "OK", data: [ ...สถานีทั้งหมด... ] }, ... }
   const list = data.waterlevel_data?.data || [];
 
   let found = list.find(item => item.station?.tele_station_oldcode === CONFIG.STATION_OLD_CODE);
@@ -62,7 +61,23 @@ async function getEmailList() {
   return raw
     .split('\n')
     .map(line => line.trim())
-    .filter(line => line.includes('@') && !line.startsWith('#')); // # นำหน้า = comment, ข้ามได้
+    .filter(line => line.includes('@') && !line.startsWith('#'));
+}
+
+// ------------------------- อ่านรายชื่อ chat_id จากไฟล์ telegram_ids.txt -------------------------------
+async function getTelegramIds() {
+  let raw;
+  try {
+    raw = await readFile(CONFIG.TELEGRAM_IDS_FILE, 'utf-8');
+  } catch {
+    console.log(`ไม่พบไฟล์ ${CONFIG.TELEGRAM_IDS_FILE}`);
+    return [];
+  }
+
+  return raw
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line && !line.startsWith('#'));
 }
 
 // ------------------------- อ่าน/เขียนสถานะ -------------------------------
@@ -114,22 +129,6 @@ async function sendAlertEmails(station, diffWlBank, emails) {
   });
 
   console.log(`ส่งอีเมลแจ้งเตือนไปยัง ${emails.length} รายชื่อเรียบร้อย`);
-}
-
-// ------------------------- อ่านรายชื่อ chat_id จากไฟล์ telegram_ids.txt -------------------------------
-async function getTelegramIds() {
-  let raw;
-  try {
-    raw = await readFile(CONFIG.TELEGRAM_IDS_FILE, 'utf-8');
-  } catch {
-    console.log(`ไม่พบไฟล์ ${CONFIG.TELEGRAM_IDS_FILE}`);
-    return [];
-  }
-
-  return raw
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line && !line.startsWith('#'));
 }
 
 // ------------------------- ส่งข้อความแจ้งเตือนผ่าน Telegram -------------------------------
@@ -237,11 +236,6 @@ async function sendLineAlert(station, diffWlBank) {
   }
 }
 
-// ------------------------- ฟังก์ชันตรวจวันที่ -------------------------------
-function getTodayBangkok() {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' }); // YYYY-MM-DD
-}
-
 // ------------------------- ฟังก์ชันหลัก -------------------------------
 async function main() {
   const station = await fetchStationData();
@@ -257,35 +251,26 @@ async function main() {
   console.log(`diff_wl_bank: ${diffWlBank} ม. | เคยแจ้งเตือนแล้ว: ${state.alertSent}`);
 
   if (diffWlBank <= CONFIG.ALERT_THRESHOLD_M) {
-    // อีเมล/Telegram: ส่งครั้งเดียวตอนข้ามเกณฑ์ (เหมือนเดิม)
     if (!state.alertSent) {
       const emails = await getEmailList();
       await sendAlertEmails(station, diffWlBank, emails);
       await sendTelegramAlerts(station, diffWlBank);
-      state.alertSent = true;
-    }
-
-    // LINE: ส่งซ้ำได้วันละ 1 ครั้ง ตราบใดที่ยังเข้าเกณฑ์อยู่
-    const today = getTodayBangkok();
-    if (state.lineLastSentDate !== today) {
       await sendLineAlert(station, diffWlBank);
-      state.lineLastSentDate = today;
+      await setState({ alertSent: true });
     } else {
-      console.log('LINE ส่งไปแล้ววันนี้ — ข้าม');
+      console.log('เข้าเกณฑ์แต่เคยแจ้งเตือนไปแล้ว — ข้าม');
     }
-
-    await setState(state);
-
   } else if (diffWlBank >= CONFIG.ALERT_THRESHOLD_M + CONFIG.RESET_BUFFER_M) {
-    if (state.alertSent || state.lineLastSentDate) {
-      await setState({ alertSent: false, lineLastSentDate: null });
-      console.log('ระดับน้ำกลับสู่ภาวะปกติ รีเซ็ตสถานะทั้งหมด');
+    if (state.alertSent) {
+      await setState({ alertSent: false });
+      console.log('ระดับน้ำกลับสู่ภาวะปกติ รีเซ็ตสถานะแล้ว');
     } else {
       console.log('ระดับน้ำปกติ');
     }
   } else {
     console.log('อยู่ในช่วงกันชน ไม่ทำอะไร');
   }
+}
 
 main().catch(err => {
   console.error('เกิดข้อผิดพลาด:', err);
