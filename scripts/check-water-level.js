@@ -159,7 +159,7 @@ async function sendTelegramAlerts(station, diffWlBank) {
     `ที่ตั้ง: อ.${amphoeTh} จ.${provinceTh}\n` +
     `ระดับน้ำปัจจุบัน (เทียบ MSL): ~${waterlevelNow} ม.\n` +
     `ต่ำกว่าตลิ่ง: ${diffWlBank} ม.\n` +
-    `เกณฑ์แจ้งเตือนที่ตั้งไว้: ${CONFIG.ALERT_THRESHOLD_M} ม.\n` +
+    `เกณฑ์แจ้งเตือนที่ตั้งไว้: ${CONFIG.TELEGRAM_THRESHOLD_M} ม.\n` +
     `เวลาที่ตรวจสอบ: ${now}\n\n` +
     `ข้อมูลจาก: ThaiWater (สสน.)`;
 
@@ -209,7 +209,7 @@ async function sendLineAlert(station, diffWlBank) {
     `ที่ตั้ง: อ.${amphoeTh} จ.${provinceTh}\n` +
     `ระดับน้ำปัจจุบัน (เทียบ MSL): ~${waterlevelNow} ม.\n` +
     `ต่ำกว่าตลิ่ง: ${diffWlBank} ม.\n` +
-    `เกณฑ์แจ้งเตือนที่ตั้งไว้: ${CONFIG.ALERT_THRESHOLD_M} ม.\n` +
+    `เกณฑ์แจ้งเตือนที่ตั้งไว้: ${CONFIG.LINE_THRESHOLD_M} ม.\n` +
     `เวลาที่ตรวจสอบ: ${now}\n\n` +
     `ข้อมูลจาก: ThaiWater (สสน.)`;
 
