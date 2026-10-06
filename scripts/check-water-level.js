@@ -166,7 +166,7 @@ async function sendTelegramAlerts(station, diffWlBank) {
     `ต่ำกว่าตลิ่ง: ${diffWlBank} ม.\n` +
     `เกณฑ์แจ้งเตือนที่ตั้งไว้: ${CONFIG.TELEGRAM_THRESHOLD_M} ม.\n` +
     `เวลาที่ตรวจสอบ: ${now}\n\n` +
-    `ข้อมูลจาก: ThaiWater (สสน.)`;
+    `ข้อมูลจาก: สสน.`;
 
   const apiUrl = `https://api.telegram.org/bot${CONFIG.TELEGRAM_BOT_TOKEN}/sendMessage`;
 
@@ -216,7 +216,7 @@ async function sendLineAlert(station, diffWlBank) {
     `ต่ำกว่าตลิ่ง: ${diffWlBank} ม.\n` +
     `เกณฑ์แจ้งเตือนที่ตั้งไว้: ${CONFIG.LINE_THRESHOLD_M} ม.\n` +
     `เวลาที่ตรวจสอบ: ${now}\n\n` +
-    `ข้อมูลจาก: ThaiWater (สสน.)`;
+    `ข้อมูลจาก: สสน.`;
 
   try {
     const res = await fetch('https://api.line.me/v2/bot/message/broadcast', {
