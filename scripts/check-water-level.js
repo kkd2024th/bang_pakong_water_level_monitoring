@@ -50,6 +50,7 @@ async function fetchStationData() {
 }
 
 // ------------------------- อ่านรายชื่ออีเมลจากไฟล์ emails.txt -------------------------------
+/*
 async function getEmailList() {
   let raw;
   try {
@@ -64,6 +65,7 @@ async function getEmailList() {
     .map(line => line.trim())
     .filter(line => line.includes('@') && !line.startsWith('#'));
 }
+*/
 
 // ------------------------- อ่านรายชื่อ chat_id จากไฟล์ telegram_ids.txt -------------------------------
 async function getTelegramIds() {
@@ -96,6 +98,7 @@ async function setState(state) {
 }
 
 // ------------------------- ส่งอีเมลแจ้งเตือน -------------------------------
+/*
 async function sendAlertEmails(station, diffWlBank, emails) {
   if (emails.length === 0) {
     console.log('ไม่พบรายชื่ออีเมลในไฟล์ emails.txt');
@@ -131,6 +134,7 @@ async function sendAlertEmails(station, diffWlBank, emails) {
 
   console.log(`ส่งอีเมลแจ้งเตือนไปยัง ${emails.length} รายชื่อเรียบร้อย`);
 }
+*/
 
 // ------------------------- ส่งข้อความแจ้งเตือนผ่าน Telegram -------------------------------
 async function sendTelegramAlerts(station, diffWlBank) {
