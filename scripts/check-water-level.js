@@ -7,8 +7,9 @@
  * - จำสถานะ: ไฟล์ state.json ใน repo (commit กลับทุกครั้งที่รัน)
  * ====================================================================
  */
-import nodemailer from 'nodemailer';
+
 import { readFile, writeFile } from 'fs/promises';
+// import nodemailer from 'nodemailer';
 
 const CONFIG = {
   API_URL: 'https://api-v3.thaiwater.net/api/v1/thaiwater30/public/waterlevel_load',
