@@ -253,7 +253,7 @@ async function main() {
   if (diffWlBank <= CONFIG.ALERT_THRESHOLD_M) {
     if (!state.alertSent) {
       const emails = await getEmailList();
-      await sendAlertEmails(station, diffWlBank, emails);
+      // await sendAlertEmails(station, diffWlBank, emails);
       await sendTelegramAlerts(station, diffWlBank);
       await sendLineAlert(station, diffWlBank);
       await setState({ alertSent: true });
