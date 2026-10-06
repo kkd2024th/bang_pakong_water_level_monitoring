@@ -15,8 +15,9 @@ const CONFIG = {
   STATION_OLD_CODE: 'BPK001',
   STATION_ID: 154,
 
-  ALERT_THRESHOLD_M: 0.50,  // default = 0.5 (50 cm)
-  RESET_BUFFER_M: 0.30,  // ระบบจะจะไม่ส่งแจ้งเตือนรอบใหม่จนกว่าน้ำจะขึ้นสูงกว่า ALERT_THRESHOLD_M + RESET_BUFFER_M
+  TELEGRAM_THRESHOLD_M: 1.0,   // Telegram: ส่งเมื่อห่างตลิ่งน้อยกว่า 100 ซม.
+  LINE_THRESHOLD_M: 0.50,       // LINE: ส่งเมื่อห่างตลิ่งน้อยกว่า 50 ซม.
+  RESET_BUFFER_M: 0.25,         // ต้องกลับขึ้นสูงกว่าเกณฑ์ 25 ซม. ถึงจะรีเซ็ตแต่ละช่องทาง
 
   EMAILS_FILE: 'emails.txt',
   STATE_FILE: 'state.json',
@@ -86,7 +87,7 @@ async function getState() {
     const raw = await readFile(CONFIG.STATE_FILE, 'utf-8');
     return JSON.parse(raw);
   } catch {
-    return { alertSent: false };
+    return { telegramSent: false, lineSent: false };
   }
 }
 
@@ -248,27 +249,50 @@ async function main() {
   const diffWlBank = parseFloat(station.diff_wl_bank);
   const state = await getState();
 
-  console.log(`diff_wl_bank: ${diffWlBank} ม. | เคยแจ้งเตือนแล้ว: ${state.alertSent}`);
+  console.log(`diff_wl_bank: ${diffWlBank} ม. | Telegram เคยส่ง: ${state.telegramSent} | LINE เคยส่ง: ${state.lineSent}`);
 
-  if (diffWlBank <= CONFIG.ALERT_THRESHOLD_M) {
-    if (!state.alertSent) {
-      const emails = await getEmailList();
-      // await sendAlertEmails(station, diffWlBank, emails);
+  let stateChanged = false;
+
+  // ------------------------- เงื่อนไข Telegram (เกณฑ์ 60 ซม.) -------------------------
+  if (diffWlBank <= CONFIG.TELEGRAM_THRESHOLD_M) {
+    if (!state.telegramSent) {
       await sendTelegramAlerts(station, diffWlBank);
+      state.telegramSent = true;
+      stateChanged = true;
+    } else {
+      console.log('Telegram: เข้าเกณฑ์แต่เคยแจ้งเตือนไปแล้ว — ข้าม');
+    }
+  } else if (diffWlBank >= CONFIG.TELEGRAM_THRESHOLD_M + CONFIG.RESET_BUFFER_M) {
+    if (state.telegramSent) {
+      state.telegramSent = false;
+      stateChanged = true;
+      console.log('Telegram: ระดับน้ำกลับสู่ภาวะปกติ รีเซ็ตสถานะแล้ว');
+    }
+  }
+
+  // ------------------------- เงื่อนไข LINE (เกณฑ์ 30 ซม.) -------------------------
+  if (diffWlBank <= CONFIG.LINE_THRESHOLD_M) {
+    if (!state.lineSent) {
       await sendLineAlert(station, diffWlBank);
-      await setState({ alertSent: true });
+      state.lineSent = true;
+      stateChanged = true;
     } else {
-      console.log('เข้าเกณฑ์แต่เคยแจ้งเตือนไปแล้ว — ข้าม');
+      console.log('LINE: เข้าเกณฑ์แต่เคยแจ้งเตือนไปแล้ว — ข้าม');
     }
-  } else if (diffWlBank >= CONFIG.ALERT_THRESHOLD_M + CONFIG.RESET_BUFFER_M) {
-    if (state.alertSent) {
-      await setState({ alertSent: false });
-      console.log('ระดับน้ำกลับสู่ภาวะปกติ รีเซ็ตสถานะแล้ว');
-    } else {
-      console.log('ระดับน้ำปกติ');
+  } else if (diffWlBank >= CONFIG.LINE_THRESHOLD_M + CONFIG.RESET_BUFFER_M) {
+    if (state.lineSent) {
+      state.lineSent = false;
+      stateChanged = true;
+      console.log('LINE: ระดับน้ำกลับสู่ภาวะปกติ รีเซ็ตสถานะแล้ว');
     }
-  } else {
-    console.log('อยู่ในช่วงกันชน ไม่ทำอะไร');
+  }
+
+  if (diffWlBank > CONFIG.TELEGRAM_THRESHOLD_M) {
+    console.log('ระดับน้ำปกติ (ยังไม่เข้าเกณฑ์ใดๆ)');
+  }
+
+  if (stateChanged) {
+    await setState(state);
   }
 }
 
