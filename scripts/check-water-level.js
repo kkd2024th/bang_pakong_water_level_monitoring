@@ -16,8 +16,8 @@ const CONFIG = {
   STATION_OLD_CODE: 'BPK001',
   STATION_ID: 154,
 
-  TELEGRAM_THRESHOLD_M: 1.0,   // Telegram: ส่งเมื่อห่างตลิ่งน้อยกว่า 100 ซม.
-  LINE_THRESHOLD_M: 0.5,       // LINE: ส่งเมื่อห่างตลิ่งน้อยกว่า 50 ซม.
+  TELEGRAM_THRESHOLD_M: 0.75,   // Telegram: ส่งเมื่อห่างตลิ่งน้อยกว่า 100 ซม.
+  LINE_THRESHOLD_M: 0.50,       // LINE: ส่งเมื่อห่างตลิ่งน้อยกว่า 50 ซม.
   RESET_BUFFER_M: 0.25,         // ต้องกลับขึ้นสูงกว่าเกณฑ์ 25 ซม. ถึงจะรีเซ็ตแต่ละช่องทาง
 
   EMAILS_FILE: 'emails.txt',
