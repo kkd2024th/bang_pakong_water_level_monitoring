@@ -1,34 +1,50 @@
 /**
  * ====================================================================
- * ระบบแจ้งเตือนระดับน้ำสถานีบางปะกง — เวอร์ชันสมบูรณ์
- * - อ่านรายชื่ออีเมล: ไฟล์ emails.txt
- * - อ่านรายชื่อ Telegram chat_id: ไฟล์ telegram_ids.txt
- * - LINE: ส่งแบบ Broadcast (ไม่ต้องเก็บ user id)
- * - จำสถานะ: ไฟล์ state.json ใน repo (commit กลับทุกครั้งที่รัน)
+ * ระบบแจ้งเตือนระดับน้ำสถานีบางปะกง — เวอร์ชันแจ้งเตือนแบบขั้นบันได (Step Ladder)
+ * - Telegram: เริ่มแจ้งเตือนที่ V = -1.0 ม. (diff_wl_bank = 1.0) ทุกๆ 0.5 ม.
+ * - LINE: เริ่มแจ้งเตือนที่ V = -0.5 ม. (diff_wl_bank = 0.5) ทุกๆ 0.5 ม.
+ * - V = ระดับน้ำเทียบตลิ่ง (+ สูงกว่าตลิ่ง / - ต่ำกว่าตลิ่ง) = -diff_wl_bank
+ * - แต่ละระดับมีจุดรีเซ็ทของตัวเอง (ถอยกลับ 0.25 ม. จากระดับนั้น)
  * ====================================================================
  */
 
 import { readFile, writeFile } from 'fs/promises';
-// import nodemailer from 'nodemailer';
 
 const CONFIG = {
   API_URL: 'https://api-v3.thaiwater.net/api/v1/thaiwater30/public/waterlevel_load',
   STATION_OLD_CODE: 'BPK001',
   STATION_ID: 154,
 
-  TELEGRAM_THRESHOLD_M: 0.75,   // Telegram: ส่งเมื่อห่างตลิ่งน้อยกว่า 100 ซม.
-  LINE_THRESHOLD_M: 0.50,       // LINE: ส่งเมื่อห่างตลิ่งน้อยกว่า 50 ซม.
-  RESET_BUFFER_M: 0.25,         // ต้องกลับขึ้นสูงกว่าเกณฑ์ 25 ซม. ถึงจะรีเซ็ตแต่ละช่องทาง
+  // ------------------------- ตั้งค่าขั้นบันไดแจ้งเตือน -------------------------
+  LEVEL_STEP_V: 0.5,            // ระยะห่างระหว่างแต่ละระดับ (ม.)
+  LEVEL_RESET_BUFFER_V: 0.25,   // ต้องถอยกลับเท่านี้ (ม.) ถึงจะรีเซ็ทระดับนั้นได้
 
-  EMAILS_FILE: 'emails.txt',
+  TELEGRAM_LEVEL_START_V: -1.0, // ระดับแรกสุดที่ Telegram เริ่มแจ้งเตือน
+  LINE_LEVEL_START_V: -0.5,     // ระดับแรกสุดที่ LINE เริ่มแจ้งเตือน
+  LEVEL_COUNT: 10,              // จำนวนระดับที่สร้างไว้ล่วงหน้า (กันน้ำท่วมสูงเกินคาด)
+
   STATE_FILE: 'state.json',
-  EMAIL_SUBJECT_PREFIX: '🚨 แจ้งเตือนระดับน้ำบางปะกง',
-
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
   TELEGRAM_IDS_FILE: 'telegram_ids.txt',
-
   LINE_CHANNEL_ACCESS_TOKEN: process.env.LINE_CHANNEL_ACCESS_TOKEN
 };
+
+// ------------------------- สร้างรายการระดับขั้นบันได -------------------------------
+function buildLevels(startV) {
+  const levels = [];
+  for (let i = 0; i < CONFIG.LEVEL_COUNT; i++) {
+    const V = +(startV + i * CONFIG.LEVEL_STEP_V).toFixed(2);
+    levels.push({
+      V,
+      diffThreshold: +(-V).toFixed(2),
+      diffReset: +((-V) + CONFIG.LEVEL_RESET_BUFFER_V).toFixed(2)
+    });
+  }
+  return levels;
+}
+
+const TELEGRAM_LEVELS = buildLevels(CONFIG.TELEGRAM_LEVEL_START_V);
+const LINE_LEVELS = buildLevels(CONFIG.LINE_LEVEL_START_V);
 
 // ------------------------- ดึงข้อมูลจาก ThaiWater API -------------------------------
 async function fetchStationData() {
@@ -50,25 +66,7 @@ async function fetchStationData() {
   return found || null;
 }
 
-// ------------------------- อ่านรายชื่ออีเมลจากไฟล์ emails.txt -------------------------------
-/*
-async function getEmailList() {
-  let raw;
-  try {
-    raw = await readFile(CONFIG.EMAILS_FILE, 'utf-8');
-  } catch {
-    console.log(`ไม่พบไฟล์ ${CONFIG.EMAILS_FILE}`);
-    return [];
-  }
-
-  return raw
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line.includes('@') && !line.startsWith('#'));
-}
-*/
-
-// ------------------------- อ่านรายชื่อ chat_id จากไฟล์ telegram_ids.txt -------------------------------
+// ------------------------- อ่านรายชื่อ chat_id -------------------------------
 async function getTelegramIds() {
   let raw;
   try {
@@ -85,12 +83,22 @@ async function getTelegramIds() {
 }
 
 // ------------------------- อ่าน/เขียนสถานะ -------------------------------
+function defaultState() {
+  return {
+    telegram: { sentLevels: new Array(CONFIG.LEVEL_COUNT).fill(false), alertCount: 0 },
+    line: { sentLevels: new Array(CONFIG.LEVEL_COUNT).fill(false), alertCount: 0 }
+  };
+}
+
 async function getState() {
   try {
     const raw = await readFile(CONFIG.STATE_FILE, 'utf-8');
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    // เผื่อไฟล์ state.json เก่าที่ยังไม่มีโครงสร้างใหม่
+    if (!parsed.telegram || !parsed.line) return defaultState();
+    return parsed;
   } catch {
-    return { telegramSent: false, lineSent: false };
+    return defaultState();
   }
 }
 
@@ -98,75 +106,36 @@ async function setState(state) {
   await writeFile(CONFIG.STATE_FILE, JSON.stringify(state, null, 2));
 }
 
-// ------------------------- ส่งอีเมลแจ้งเตือน -------------------------------
-/*
-async function sendAlertEmails(station, diffWlBank, emails) {
-  if (emails.length === 0) {
-    console.log('ไม่พบรายชื่ออีเมลในไฟล์ emails.txt');
-    return;
-  }
-
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD }
-  });
-
+// ------------------------- สร้างข้อความแจ้งเตือน -------------------------------
+function buildMessage(station, diffWlBank, level, alertCount) {
   const stationNameTh = station.station.tele_station_name.th;
   const provinceTh = station.geocode.province_name.th;
   const amphoeTh = station.geocode.amphoe_name.th;
   const minBank = station.station.min_bank;
   const waterlevelNow = (minBank - diffWlBank).toFixed(2);
   const now = new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
+  const vText = (level.V >= 0 ? '+' : '') + level.V.toFixed(2);
 
-  await transporter.sendMail({
-    from: process.env.GMAIL_USER,
-    to: emails.join(','),
-    subject: `${CONFIG.EMAIL_SUBJECT_PREFIX} - ${stationNameTh}`,
-    text:
-      `🚨 แจ้งเตือนระดับน้ำใกล้ล้นตลิ่ง\n\n` +
-      `สถานี: ${stationNameTh}\n` +
-      `ที่ตั้ง: อ.${amphoeTh} จ.${provinceTh}\n` +
-      `ระดับน้ำปัจจุบัน (เทียบ MSL): ~${waterlevelNow} ม.\n` +
-      `ต่ำกว่าตลิ่ง: ${diffWlBank} ม.\n` +
-      `เกณฑ์แจ้งเตือนที่ตั้งไว้: ${CONFIG.ALERT_THRESHOLD_M} ม.\n` +
-      `เวลาที่ตรวจสอบ: ${now}\n\n` +
-      `ข้อมูลจาก: ThaiWater (สสน.)`
-  });
-
-  console.log(`ส่งอีเมลแจ้งเตือนไปยัง ${emails.length} รายชื่อเรียบร้อย`);
-}
-*/
-
-// ------------------------- ส่งข้อความแจ้งเตือนผ่าน Telegram -------------------------------
-async function sendTelegramAlerts(station, diffWlBank) {
-  const chatIds = await getTelegramIds();
-
-  if (chatIds.length === 0) {
-    console.log('ไม่พบ chat_id ในไฟล์ telegram_ids.txt');
-    return;
-  }
-
-  if (!CONFIG.TELEGRAM_BOT_TOKEN) {
-    console.log('ไม่ได้ตั้งค่า TELEGRAM_BOT_TOKEN');
-    return;
-  }
-
-  const stationNameTh = station.station.tele_station_name.th;
-  const provinceTh = station.geocode.province_name.th;
-  const amphoeTh = station.geocode.amphoe_name.th;
-  const minBank = station.station.min_bank;
-  const waterlevelNow = (minBank - diffWlBank).toFixed(2);
-  const now = new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
-
-  const message =
-    `🚨 *แจ้งเตือนระดับน้ำใกล้ล้นตลิ่ง*\n\n` +
+  return (
+    `🚨 แจ้งเตือนระดับน้ำใกล้ล้นตลิ่ง (การแจ้งเตือนครั้งที่ ${alertCount})\n\n` +
     `สถานี: ${stationNameTh}\n` +
     `ที่ตั้ง: อ.${amphoeTh} จ.${provinceTh}\n` +
     `ระดับน้ำปัจจุบัน (เทียบ MSL): ~${waterlevelNow} ม.\n` +
-    `ต่ำกว่าตลิ่ง: ${diffWlBank} ม.\n` +
-    `เกณฑ์แจ้งเตือนที่ตั้งไว้: ${CONFIG.TELEGRAM_THRESHOLD_M} ม.\n` +
+    `ระดับน้ำเทียบตลิ่ง: ${vText} ม. (${level.V >= 0 ? 'สูงกว่าตลิ่ง' : 'ต่ำกว่าตลิ่ง'})\n` +
+    `ระดับที่ข้ามเกณฑ์: ${vText} ม.\n` +
     `เวลาที่ตรวจสอบ: ${now}\n\n` +
-    `ข้อมูลจาก: สสน.`;
+    `ข้อมูลจาก: สสน.`
+  );
+}
+
+// ------------------------- ส่งข้อความแจ้งเตือนผ่าน Telegram -------------------------------
+async function sendTelegramMessage(message) {
+  const chatIds = await getTelegramIds();
+
+  if (chatIds.length === 0 || !CONFIG.TELEGRAM_BOT_TOKEN) {
+    console.log('ข้าม Telegram (ไม่มี chat_id หรือ token)');
+    return;
+  }
 
   const apiUrl = `https://api.telegram.org/bot${CONFIG.TELEGRAM_BOT_TOKEN}/sendMessage`;
 
@@ -175,48 +144,22 @@ async function sendTelegramAlerts(station, diffWlBank) {
       const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: message,
-          parse_mode: 'Markdown'
-        })
+        body: JSON.stringify({ chat_id: chatId, text: message })
       });
-
-      if (!res.ok) {
-        const errText = await res.text();
-        console.log(`ส่ง Telegram ไปยัง ${chatId} ไม่สำเร็จ: ${errText}`);
-      }
+      if (!res.ok) console.log(`ส่ง Telegram ไปยัง ${chatId} ไม่สำเร็จ: ${await res.text()}`);
     } catch (e) {
       console.log(`ส่ง Telegram ไปยัง ${chatId} เกิดข้อผิดพลาด: ${e.message}`);
     }
   }
-
-  console.log(`ส่งแจ้งเตือน Telegram ไปยัง ${chatIds.length} รายชื่อเรียบร้อย`);
+  console.log(`ส่ง Telegram ไปยัง ${chatIds.length} รายชื่อเรียบร้อย`);
 }
 
 // ------------------------- ส่งข้อความแจ้งเตือนผ่าน LINE (Broadcast) -------------------------------
-async function sendLineAlert(station, diffWlBank) {
+async function sendLineMessage(message) {
   if (!CONFIG.LINE_CHANNEL_ACCESS_TOKEN) {
-    console.log('ไม่ได้ตั้งค่า LINE_CHANNEL_ACCESS_TOKEN');
+    console.log('ข้าม LINE (ไม่มี token)');
     return;
   }
-
-  const stationNameTh = station.station.tele_station_name.th;
-  const provinceTh = station.geocode.province_name.th;
-  const amphoeTh = station.geocode.amphoe_name.th;
-  const minBank = station.station.min_bank;
-  const waterlevelNow = (minBank - diffWlBank).toFixed(2);
-  const now = new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
-
-  const message =
-    `🚨 แจ้งเตือนระดับน้ำใกล้ล้นตลิ่ง\n\n` +
-    `สถานี: ${stationNameTh}\n` +
-    `ที่ตั้ง: อ.${amphoeTh} จ.${provinceTh}\n` +
-    `ระดับน้ำปัจจุบัน (เทียบ MSL): ~${waterlevelNow} ม.\n` +
-    `ต่ำกว่าตลิ่ง: ${diffWlBank} ม.\n` +
-    `เกณฑ์แจ้งเตือนที่ตั้งไว้: ${CONFIG.LINE_THRESHOLD_M} ม.\n` +
-    `เวลาที่ตรวจสอบ: ${now}\n\n` +
-    `ข้อมูลจาก: สสน.`;
 
   try {
     const res = await fetch('https://api.line.me/v2/bot/message/broadcast', {
@@ -225,21 +168,48 @@ async function sendLineAlert(station, diffWlBank) {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${CONFIG.LINE_CHANNEL_ACCESS_TOKEN}`
       },
-      body: JSON.stringify({
-        messages: [{ type: 'text', text: message }]
-      })
+      body: JSON.stringify({ messages: [{ type: 'text', text: message }] })
     });
 
     if (!res.ok) {
-      const errText = await res.text();
-      console.log(`ส่ง LINE ไม่สำเร็จ: ${errText}`);
+      console.log(`ส่ง LINE ไม่สำเร็จ: ${await res.text()}`);
       return;
     }
-
-    console.log('ส่งแจ้งเตือน LINE (broadcast) เรียบร้อย');
+    console.log('ส่ง LINE (broadcast) เรียบร้อย');
   } catch (e) {
     console.log(`ส่ง LINE เกิดข้อผิดพลาด: ${e.message}`);
   }
+}
+
+// ------------------------- ประมวลผลขั้นบันไดของแต่ละช่องทาง -------------------------------
+async function processLadder(channelName, levels, channelState, station, diffWlBank, sendFn) {
+  let changed = false;
+
+  for (let i = 0; i < levels.length; i++) {
+    const level = levels[i];
+    const alreadySent = channelState.sentLevels[i];
+
+    if (diffWlBank <= level.diffThreshold) {
+      // เข้าเกณฑ์ระดับนี้
+      if (!alreadySent) {
+        channelState.alertCount += 1;
+        const message = buildMessage(station, diffWlBank, level, channelState.alertCount);
+        await sendFn(message);
+        channelState.sentLevels[i] = true;
+        changed = true;
+        console.log(`[${channelName}] ข้ามระดับ V=${level.V} ม. → ส่งแจ้งเตือนครั้งที่ ${channelState.alertCount}`);
+      }
+    } else if (diffWlBank >= level.diffReset) {
+      // กลับขึ้นสูงกว่าจุดรีเซ็ทของระดับนี้แล้ว
+      if (alreadySent) {
+        channelState.sentLevels[i] = false;
+        changed = true;
+        console.log(`[${channelName}] ระดับ V=${level.V} ม. รีเซ็ทแล้ว (น้ำกลับขึ้น)`);
+      }
+    }
+  }
+
+  return changed;
 }
 
 // ------------------------- ฟังก์ชันหลัก -------------------------------
@@ -254,50 +224,23 @@ async function main() {
   const diffWlBank = parseFloat(station.diff_wl_bank);
   const state = await getState();
 
-  console.log(`diff_wl_bank: ${diffWlBank} ม. | Telegram เคยส่ง: ${state.telegramSent} | LINE เคยส่ง: ${state.lineSent}`);
+  console.log(`diff_wl_bank: ${diffWlBank} ม. (V = ${(-diffWlBank).toFixed(2)} ม.)`);
 
-  let stateChanged = false;
+  let changed = false;
 
-  // ------------------------- เงื่อนไข Telegram (เกณฑ์ 60 ซม.) -------------------------
-  if (diffWlBank <= CONFIG.TELEGRAM_THRESHOLD_M) {
-    if (!state.telegramSent) {
-      await sendTelegramAlerts(station, diffWlBank);
-      state.telegramSent = true;
-      stateChanged = true;
-    } else {
-      console.log('Telegram: เข้าเกณฑ์แต่เคยแจ้งเตือนไปแล้ว — ข้าม');
-    }
-  } else if (diffWlBank >= CONFIG.TELEGRAM_THRESHOLD_M + CONFIG.RESET_BUFFER_M) {
-    if (state.telegramSent) {
-      state.telegramSent = false;
-      stateChanged = true;
-      console.log('Telegram: ระดับน้ำกลับสู่ภาวะปกติ รีเซ็ตสถานะแล้ว');
-    }
-  }
+  const telegramChanged = await processLadder(
+    'Telegram', TELEGRAM_LEVELS, state.telegram, station, diffWlBank, sendTelegramMessage
+  );
+  const lineChanged = await processLadder(
+    'LINE', LINE_LEVELS, state.line, station, diffWlBank, sendLineMessage
+  );
 
-  // ------------------------- เงื่อนไข LINE (เกณฑ์ 30 ซม.) -------------------------
-  if (diffWlBank <= CONFIG.LINE_THRESHOLD_M) {
-    if (!state.lineSent) {
-      await sendLineAlert(station, diffWlBank);
-      state.lineSent = true;
-      stateChanged = true;
-    } else {
-      console.log('LINE: เข้าเกณฑ์แต่เคยแจ้งเตือนไปแล้ว — ข้าม');
-    }
-  } else if (diffWlBank >= CONFIG.LINE_THRESHOLD_M + CONFIG.RESET_BUFFER_M) {
-    if (state.lineSent) {
-      state.lineSent = false;
-      stateChanged = true;
-      console.log('LINE: ระดับน้ำกลับสู่ภาวะปกติ รีเซ็ตสถานะแล้ว');
-    }
-  }
+  changed = telegramChanged || lineChanged;
 
-  if (diffWlBank > CONFIG.TELEGRAM_THRESHOLD_M) {
-    console.log('ระดับน้ำปกติ (ยังไม่เข้าเกณฑ์ใดๆ)');
-  }
-
-  if (stateChanged) {
+  if (changed) {
     await setState(state);
+  } else {
+    console.log('ไม่มีการเปลี่ยนแปลงสถานะในรอบนี้');
   }
 }
 
