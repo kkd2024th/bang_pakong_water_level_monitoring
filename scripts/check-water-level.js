@@ -125,7 +125,7 @@ function buildMessage(station, diffWlBank, level, alertCount) {
     `ที่ตั้ง: อ.${amphoeTh} จ.${provinceTh}\n` +
     `ระดับน้ำปัจจุบัน (เทียบ MSL): ~${waterlevelNow} ม.\n` +
     `ระดับน้ำเทียบตลิ่ง (ค่าจริง ณ ขณะนี้): ${actualVText} ม. (${actualV >= 0 ? 'สูงกว่าตลิ่ง' : 'ต่ำกว่าตลิ่ง'})\n` +
-    `ระดับเกณฑ์ที่ข้าม: ${levelVText} ม.\n` +
+    `ระดับเกณฑ์ที่ตั้งไว้: ${levelVText} ม.\n` +
     `เวลาที่ตรวจสอบ: ${now}\n\n` +
     `ข้อมูลจาก: สสน.`
   );
