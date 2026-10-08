@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: water-alert
+  cancel-in-progress: false
+
 jobs:
   check:
     runs-on: ubuntu-latest
