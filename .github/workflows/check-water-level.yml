@@ -1,9 +1,7 @@
 name: Check Water Level
 
 on:
-  schedule:
-    - cron: '*/10 * * * *'
-  workflow_dispatch:
+  workflow_dispatch: # รอรับแรงสะกิดจาก External Cron อย่างเดียว
 
 permissions:
   contents: write
@@ -24,18 +22,13 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install dependencies
-        run: npm install
-
       - name: Run water level check
-        run: npm run check
+        run: node scripts/check-water-level.js
         env:
-          GMAIL_USER: ${{ secrets.GMAIL_USER }}
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
-          
-      - name: Commit updated state (if changed)
+
+      - name: Commit updated state
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: 'update water alert state'
