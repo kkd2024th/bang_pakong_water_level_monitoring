@@ -120,14 +120,10 @@ function buildMessage(station, diffWlBank, level, alertCount) {
   const levelVText = (level.V >= 0 ? '+' : '') + level.V.toFixed(2);
 
   return (
-    `🚨 แจ้งเตือนระดับน้ำใกล้ล้นตลิ่ง [${alertCount}]\n\n` +
-    `สถานี: ${stationNameTh}\n` +
-    `ที่ตั้ง: อ.${amphoeTh} จ.${provinceTh}\n` +
-    `ระดับน้ำปัจจุบัน เทียบ MSL: ~${waterlevelNow} ม.\n` +
-    `ระดับน้ำปัจจุบัน เทียบ ตลิ่ง: ${actualVText} ม. (${actualV >= 0 ? 'สูงกว่าตลิ่ง' : 'ต่ำกว่าตลิ่ง'})\n` +
-    `ระดับเกณฑ์ที่ตั้งไว้: ${levelVText} ม.\n` +
-    `เวลาที่ตรวจสอบ: ${now}\n\n` +
-    `ข้อมูลจาก: สสน.`
+    `🚨 ระดับน้ำสถานี: ${stationNameTh}\n\n` +
+    `${waterlevelNow} ม. (เทียบกับระดับน้ำทะเล)\n` +
+    `${actualVText} ม. (${actualV >= 0 ? 'สูงกว่าตลิ่ง' : 'ต่ำกว่าตลิ่ง'})\n` +
+    `เวลาที่ตรวจสอบ: ${now}\n\n`
   );
 }
 
