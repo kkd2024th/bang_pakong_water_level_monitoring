@@ -121,7 +121,7 @@ function buildMessage(station, diffWlBank, level, alertCount) {
 
   return (
     `${actualV >= 0 ? '🚨' : '⚠️'} ระดับน้ำสถานี${stationNameTh}\n\n` +
-    `≈${waterlevelNow} ม. (เทียบกับ MSL)\n\n` +
+    `≈${waterlevelNow} ม. (เทียบ MSL)\n\n` +
     `${actualVText} ม. (${actualV >= 0 ? 'สูงกว่าตลิ่ง' : 'ต่ำกว่าตลิ่ง'})\n\n`
   );
 }
