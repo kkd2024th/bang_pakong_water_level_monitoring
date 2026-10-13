@@ -120,8 +120,8 @@ function buildMessage(station, diffWlBank, level, alertCount) {
   const levelVText = (level.V >= 0 ? '+' : '') + level.V.toFixed(2);
 
   return (
-    `🚨 ระดับน้ำสถานี${stationNameTh}\n\n` +
-    `≈${waterlevelNow} ม. (เทียบกับระดับน้ำทะเล)\n\n` +
+    `${actualV >= 0 ? '🚨' : '⚠️'} ระดับน้ำสถานี${stationNameTh}\n\n` +
+    `≈${waterlevelNow} ม. (เทียบกับ MSL)\n\n` +
     `${actualVText} ม. (${actualV >= 0 ? 'สูงกว่าตลิ่ง' : 'ต่ำกว่าตลิ่ง'})\n\n`
   );
 }
