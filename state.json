@@ -2,7 +2,7 @@
   "telegram": {
     "sentLevels": [
       true,
-      false,
+      true,
       false,
       false,
       false,
@@ -12,11 +12,11 @@
       false,
       false
     ],
-    "alertCount": 20
+    "alertCount": 21
   },
   "line": {
     "sentLevels": [
-      false,
+      true,
       false,
       false,
       false,
@@ -27,6 +27,6 @@
       false,
       false
     ],
-    "alertCount": 8
+    "alertCount": 9
   }
 }
