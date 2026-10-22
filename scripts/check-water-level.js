@@ -1,10 +1,11 @@
 /**
  * ====================================================================
- * ระบบแจ้งเตือนระดับน้ำสถานีบางปะกง — เวอร์ชันแจ้งเตือนแบบขั้นบันได (Step Ladder)
- * - Telegram: เริ่มแจ้งเตือนที่ V = -1.0 ม. (diff_wl_bank = 1.0) ทุกๆ 0.5 ม.
- * - LINE: เริ่มแจ้งเตือนที่ V = -0.5 ม. (diff_wl_bank = 0.5) ทุกๆ 0.5 ม.
+ * ระบบแจ้งเตือนระดับน้ำสถานีบางปะกง — ขั้นบันไดตามตาราง
  * - V = ระดับน้ำเทียบตลิ่ง (+ สูงกว่าตลิ่ง / - ต่ำกว่าตลิ่ง) = -diff_wl_bank
- * - แต่ละระดับมีจุดรีเซ็ทของตัวเอง (ถอยกลับ 0.25 ม. จากระดับนั้น)
+ * - Telegram: ทุก 0.25 ม. ตั้งแต่ V=-1.0 ถึง +2.0
+ * - LINE:     ทุก 0.5 ม.  ตั้งแต่ V=-0.5 ถึง +2.0
+ * - จุดรีเซ็ทของแต่ละระดับ = V ของระดับนั้น − 0.25
+ * - ระดับ V < 0 ใช้ ⚠️ / ระดับ V ≥ 0 ใช้ 🚨
  * ====================================================================
  */
 
@@ -15,13 +16,15 @@ const CONFIG = {
   STATION_OLD_CODE: 'BPK001',
   STATION_ID: 154,
 
-  // ------------------------- ตั้งค่าขั้นบันไดแจ้งเตือน -------------------------
-  LEVEL_STEP_V: 0.5,            // ระยะห่างระหว่างแต่ละระดับ (ม.)
-  LEVEL_RESET_BUFFER_V: 0.25,   // ต้องถอยกลับเท่านี้ (ม.) ถึงจะรีเซ็ทระดับนั้นได้
+  // ------------------------- ตั้งค่าขั้นบันได (ตรงตามตาราง) -------------------------
+  LEVEL_RESET_BUFFER_V: 0.25,   // รีเซ็ทเมื่อ V ลดลงจากระดับนั้นเท่านี้ (ม.)
+  LEVEL_END_V: 2.0,             // ระดับสูงสุดที่กำหนดไว้
 
-  TELEGRAM_LEVEL_START_V: -1.0, // ระดับแรกสุดที่ Telegram เริ่มแจ้งเตือน
-  LINE_LEVEL_START_V: -0.5,     // ระดับแรกสุดที่ LINE เริ่มแจ้งเตือน
-  LEVEL_COUNT: 10,              // จำนวนระดับที่สร้างไว้ล่วงหน้า (กันน้ำท่วมสูงเกินคาด)
+  TELEGRAM_LEVEL_START_V: -1.0,
+  TELEGRAM_LEVEL_STEP_V: 0.25,
+
+  LINE_LEVEL_START_V: -0.5,
+  LINE_LEVEL_STEP_V: 0.5,
 
   STATE_FILE: 'state.json',
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
@@ -30,10 +33,11 @@ const CONFIG = {
 };
 
 // ------------------------- สร้างรายการระดับขั้นบันได -------------------------------
-function buildLevels(startV) {
+function buildLevels(startV, stepV, endV) {
+  const count = Math.round((endV - startV) / stepV) + 1;
   const levels = [];
-  for (let i = 0; i < CONFIG.LEVEL_COUNT; i++) {
-    const V = +(startV + i * CONFIG.LEVEL_STEP_V).toFixed(2);
+  for (let i = 0; i < count; i++) {
+    const V = +(startV + i * stepV).toFixed(2);
     levels.push({
       V,
       diffThreshold: +(-V).toFixed(2),
@@ -43,8 +47,12 @@ function buildLevels(startV) {
   return levels;
 }
 
-const TELEGRAM_LEVELS = buildLevels(CONFIG.TELEGRAM_LEVEL_START_V);
-const LINE_LEVELS = buildLevels(CONFIG.LINE_LEVEL_START_V);
+const TELEGRAM_LEVELS = buildLevels(
+  CONFIG.TELEGRAM_LEVEL_START_V, CONFIG.TELEGRAM_LEVEL_STEP_V, CONFIG.LEVEL_END_V
+);
+const LINE_LEVELS = buildLevels(
+  CONFIG.LINE_LEVEL_START_V, CONFIG.LINE_LEVEL_STEP_V, CONFIG.LEVEL_END_V
+);
 
 // ------------------------- ดึงข้อมูลจาก ThaiWater API -------------------------------
 async function fetchStationData() {
@@ -83,19 +91,38 @@ async function getTelegramIds() {
 }
 
 // ------------------------- อ่าน/เขียนสถานะ -------------------------------
+function defaultChannelState(levelCount) {
+  return {
+    sentLevels: new Array(levelCount).fill(false),
+    alertCount: 0
+  };
+}
+
 function defaultState() {
   return {
-    telegram: { sentLevels: new Array(CONFIG.LEVEL_COUNT).fill(false), alertCount: 0 },
-    line: { sentLevels: new Array(CONFIG.LEVEL_COUNT).fill(false), alertCount: 0 }
+    telegram: defaultChannelState(TELEGRAM_LEVELS.length),
+    line: defaultChannelState(LINE_LEVELS.length)
   };
+}
+
+function isValidChannelState(s, expectedLen) {
+  return s && Array.isArray(s.sentLevels) && s.sentLevels.length === expectedLen;
 }
 
 async function getState() {
   try {
     const raw = await readFile(CONFIG.STATE_FILE, 'utf-8');
     const parsed = JSON.parse(raw);
-    // เผื่อไฟล์ state.json เก่าที่ยังไม่มีโครงสร้างใหม่
-    if (!parsed.telegram || !parsed.line) return defaultState();
+
+    // โครงสร้างเก่า หรือจำนวนระดับไม่ตรงกับที่ตั้งค่าไว้ → เริ่มสถานะใหม่
+    if (
+      !isValidChannelState(parsed.telegram, TELEGRAM_LEVELS.length) ||
+      !isValidChannelState(parsed.line, LINE_LEVELS.length)
+    ) {
+      console.log('โครงสร้าง state.json ไม่ตรงกับการตั้งค่าปัจจุบัน → เริ่มสถานะใหม่');
+      return defaultState();
+    }
+
     return parsed;
   } catch {
     return defaultState();
@@ -107,35 +134,35 @@ async function setState(state) {
 }
 
 // ------------------------- สร้างข้อความแจ้งเตือน -------------------------------
-function buildMessage(station, diffWlBank, level, alertCount) {
+function formatV(v) {
+  return (v >= 0 ? '+' : '') + v.toFixed(2);
+}
+
+function buildAlertMessage(station, diffWlBank, level) {
   const stationNameTh = station.station.tele_station_name.th;
-  const provinceTh = station.geocode.province_name.th;
-  const amphoeTh = station.geocode.amphoe_name.th;
   const minBank = station.station.min_bank;
   const waterlevelNow = (minBank - diffWlBank).toFixed(2);
-  const now = new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
-
   const actualV = -diffWlBank;
-  const actualVText = (actualV >= 0 ? '+' : '') + actualV.toFixed(2);
-  const levelVText = (level.V >= 0 ? '+' : '') + level.V.toFixed(2);
+  const emoji = level.V >= 0 ? '🚨' : '⚠️';
 
   return (
-    `${actualV >= 0 ? '🚨' : '⚠️'} ระดับน้ำสถานี${stationNameTh}\n\n` +
+    `${emoji} ระดับน้ำสถานี${stationNameTh}\n\n` +
     `≈${waterlevelNow} ม. (เทียบ MSL)\n\n` +
-    `${actualVText} ม. (${actualV >= 0 ? 'สูงกว่าตลิ่ง' : 'ต่ำกว่าตลิ่ง'})\n\n`
+    `${formatV(actualV)} ม. (${actualV >= 0 ? 'สูงกว่าตลิ่ง' : 'ต่ำกว่าตลิ่ง'})`
   );
 }
 
-// ------------------------- ส่งข้อความแจ้งเตือนผ่าน Telegram -------------------------------
+// ------------------------- ส่งข้อความผ่าน Telegram (true = สำเร็จอย่างน้อย 1 คน) -------------------------------
 async function sendTelegramMessage(message) {
   const chatIds = await getTelegramIds();
 
   if (chatIds.length === 0 || !CONFIG.TELEGRAM_BOT_TOKEN) {
     console.log('ข้าม Telegram (ไม่มี chat_id หรือ token)');
-    return;
+    return false;
   }
 
   const apiUrl = `https://api.telegram.org/bot${CONFIG.TELEGRAM_BOT_TOKEN}/sendMessage`;
+  let okCount = 0;
 
   for (const chatId of chatIds) {
     try {
@@ -144,19 +171,25 @@ async function sendTelegramMessage(message) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chat_id: chatId, text: message })
       });
-      if (!res.ok) console.log(`ส่ง Telegram ไปยัง ${chatId} ไม่สำเร็จ: ${await res.text()}`);
+      if (res.ok) {
+        okCount++;
+      } else {
+        console.log(`ส่ง Telegram ไปยัง ${chatId} ไม่สำเร็จ: ${await res.text()}`);
+      }
     } catch (e) {
       console.log(`ส่ง Telegram ไปยัง ${chatId} เกิดข้อผิดพลาด: ${e.message}`);
     }
   }
-  console.log(`ส่ง Telegram ไปยัง ${chatIds.length} รายชื่อเรียบร้อย`);
+
+  console.log(`ส่ง Telegram สำเร็จ ${okCount}/${chatIds.length} รายชื่อ`);
+  return okCount > 0;
 }
 
-// ------------------------- ส่งข้อความแจ้งเตือนผ่าน LINE (Broadcast) -------------------------------
+// ------------------------- ส่งข้อความผ่าน LINE Broadcast (true = สำเร็จ) -------------------------------
 async function sendLineMessage(message) {
   if (!CONFIG.LINE_CHANNEL_ACCESS_TOKEN) {
     console.log('ข้าม LINE (ไม่มี token)');
-    return;
+    return false;
   }
 
   try {
@@ -171,39 +204,56 @@ async function sendLineMessage(message) {
 
     if (!res.ok) {
       console.log(`ส่ง LINE ไม่สำเร็จ: ${await res.text()}`);
-      return;
+      return false;
     }
     console.log('ส่ง LINE (broadcast) เรียบร้อย');
+    return true;
   } catch (e) {
     console.log(`ส่ง LINE เกิดข้อผิดพลาด: ${e.message}`);
+    return false;
   }
 }
 
 // ------------------------- ประมวลผลขั้นบันไดของแต่ละช่องทาง -------------------------------
 async function processLadder(channelName, levels, channelState, station, diffWlBank, sendFn) {
   let changed = false;
+  const crossed = [];   // ระดับที่เพิ่งข้ามเกณฑ์ในรอบนี้
+  const resetIdx = [];  // ระดับที่น้ำลดพ้นจุดรีเซ็ทในรอบนี้
 
   for (let i = 0; i < levels.length; i++) {
     const level = levels[i];
     const alreadySent = channelState.sentLevels[i];
 
     if (diffWlBank <= level.diffThreshold) {
-      // เข้าเกณฑ์ระดับนี้
-      if (!alreadySent) {
-        channelState.alertCount += 1;
-        const message = buildMessage(station, diffWlBank, level, channelState.alertCount);
-        await sendFn(message);
-        channelState.sentLevels[i] = true;
-        changed = true;
-        console.log(`[${channelName}] ข้ามระดับ V=${level.V} ม. → ส่งแจ้งเตือนครั้งที่ ${channelState.alertCount}`);
-      }
+      if (!alreadySent) crossed.push(i);
     } else if (diffWlBank >= level.diffReset) {
-      // กลับขึ้นสูงกว่าจุดรีเซ็ทของระดับนี้แล้ว
-      if (alreadySent) {
-        channelState.sentLevels[i] = false;
-        changed = true;
-        console.log(`[${channelName}] ระดับ V=${level.V} ม. รีเซ็ทแล้ว (น้ำกลับขึ้น)`);
-      }
+      if (alreadySent) resetIdx.push(i);
+    }
+  }
+
+  // ---------- รีเซ็ทระดับที่น้ำลดพ้นจุดรีเซ็ท (ไม่ส่งข้อความ) ----------
+  if (resetIdx.length > 0) {
+    resetIdx.forEach(i => { channelState.sentLevels[i] = false; });
+    changed = true;
+    console.log(`[${channelName}] รีเซ็ท ${resetIdx.length} ระดับ (V=${resetIdx.map(i => levels[i].V).join(', ')} ม.)`);
+  }
+
+  // ---------- ข้ามระดับใหม่: ส่งข้อความเดียวต่อรอบ (ของระดับสูงสุดที่เพิ่งข้าม) ----------
+  if (crossed.length > 0) {
+    const topLevel = levels[crossed[crossed.length - 1]];
+    const ok = await sendFn(buildAlertMessage(station, diffWlBank, topLevel));
+
+    if (ok) {
+      channelState.alertCount += 1;
+      crossed.forEach(i => { channelState.sentLevels[i] = true; });
+      changed = true;
+      console.log(
+        `[${channelName}] ข้ามระดับ V=${topLevel.V} ม.` +
+        (crossed.length > 1 ? ` (พร้อมกัน ${crossed.length} ระดับ)` : '') +
+        ` → ส่งข้อความครั้งที่ ${channelState.alertCount}`
+      );
+    } else {
+      console.log(`[${channelName}] ส่งแจ้งเตือนไม่สำเร็จ จะลองใหม่ในรอบถัดไป`);
     }
   }
 
@@ -220,11 +270,15 @@ async function main() {
   }
 
   const diffWlBank = parseFloat(station.diff_wl_bank);
+
+  if (Number.isNaN(diffWlBank)) {
+    console.log(`diff_wl_bank ไม่ใช่ตัวเลข (ค่าที่ได้: ${station.diff_wl_bank}) ข้ามรอบนี้`);
+    return;
+  }
+
   const state = await getState();
 
   console.log(`diff_wl_bank: ${diffWlBank} ม. (V = ${(-diffWlBank).toFixed(2)} ม.)`);
-
-  let changed = false;
 
   const telegramChanged = await processLadder(
     'Telegram', TELEGRAM_LEVELS, state.telegram, station, diffWlBank, sendTelegramMessage
@@ -233,9 +287,7 @@ async function main() {
     'LINE', LINE_LEVELS, state.line, station, diffWlBank, sendLineMessage
   );
 
-  changed = telegramChanged || lineChanged;
-
-  if (changed) {
+  if (telegramChanged || lineChanged) {
     await setState(state);
   } else {
     console.log('ไม่มีการเปลี่ยนแปลงสถานะในรอบนี้');
