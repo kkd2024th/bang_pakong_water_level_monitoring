@@ -22,7 +22,7 @@ const CONFIG = {
   LEVEL_RESET_BUFFER_V: 0.25,   // รีเซ็ทเมื่อ V ลดลงจากระดับนั้นเท่านี้ (ม.)
   LEVEL_END_V: 2.0,             // ระดับสูงสุดที่กำหนดไว้
 
-  TELEGRAM_LEVEL_START_V: -1.0,
+  TELEGRAM_LEVEL_START_V: -0.75,   // เดิม -1.0 → Telegram เริ่มแจ้งเตือนที่ V = -0.75
   TELEGRAM_LEVEL_STEP_V: 0.25,
 
   LINE_LEVEL_START_V: -0.5,
@@ -30,7 +30,7 @@ const CONFIG = {
 
   // Telegram: ส่งข้อความ "น้ำลดลง" ทุกครั้งที่มีการรีเซ็ต
   // แต่ไม่ส่งเมื่อ V ปัจจุบันต่ำกว่าค่านี้ (ม.) เพราะถือว่าปลอดภัยแล้ว
-  TELEGRAM_FALL_MESSAGE_STOP_BELOW_V: -1.0,
+  TELEGRAM_FALL_MESSAGE_STOP_BELOW_V: -0.75,   // เดิม -1.0 → V ต่ำกว่า -0.75 ไม่ส่ง "น้ำลดลง"
 
   STATE_FILE: 'state.json',
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
