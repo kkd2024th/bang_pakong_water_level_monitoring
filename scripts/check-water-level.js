@@ -3,7 +3,8 @@
  * ระบบแจ้งเตือนระดับน้ำสถานีบางปะกง — ขั้นบันไดตามตาราง
  * - V = ระดับน้ำเทียบตลิ่ง (+ สูงกว่าตลิ่ง / - ต่ำกว่าตลิ่ง) = -diff_wl_bank
  * - Telegram: ทุก 0.25 ม. ตั้งแต่ V=-1.0 ถึง +2.0
- *             + แจ้ง "น้ำลดลง" เมื่อมีระดับถูกรีเซ็ตและ V ต่ำกว่า -0.5 ม.
+ *             + แจ้ง "น้ำลดลง" ทุกครั้งที่มีระดับถูกรีเซ็ต
+ *               ยกเว้นเมื่อ V ต่ำกว่า -1.0 ม. (ปลอดภัยแล้ว ไม่ต้องเฝ้าระวัง)
  * - LINE:     ทุก 0.5 ม.  ตั้งแต่ V=-0.5 ถึง +2.0
  * - จุดรีเซ็ทของแต่ละระดับ = V ของระดับนั้น − 0.25
  * - ระดับ V < 0 ใช้ ⚠️ / ระดับ V ≥ 0 ใช้ 🚨
@@ -27,8 +28,9 @@ const CONFIG = {
   LINE_LEVEL_START_V: -0.5,
   LINE_LEVEL_STEP_V: 0.5,
 
-  // Telegram: ส่งข้อความ "น้ำลดลง" เมื่อมีการรีเซ็ต และ V ปัจจุบันต่ำกว่าค่านี้ (ม.)
-  TELEGRAM_FALL_MESSAGE_BELOW_V: -0.5,
+  // Telegram: ส่งข้อความ "น้ำลดลง" ทุกครั้งที่มีการรีเซ็ต
+  // แต่ไม่ส่งเมื่อ V ปัจจุบันต่ำกว่าค่านี้ (ม.) เพราะถือว่าปลอดภัยแล้ว
+  TELEGRAM_FALL_MESSAGE_STOP_BELOW_V: -1.0,
 
   STATE_FILE: 'state.json',
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
@@ -157,18 +159,27 @@ function buildAlertMessage(station, diffWlBank, level) {
   );
 }
 
-// ข้อความ "น้ำลดลง" (Telegram)
+// ข้อความ "น้ำลดลง" (Telegram) — รองรับทั้งกรณีที่ยังสูงกว่าตลิ่งและต่ำกว่าตลิ่งแล้ว
 function buildFallMessage(station, diffWlBank) {
   const stationNameTh = station.station.tele_station_name.th;
   const minBank = station.station.min_bank;
   const waterlevelNow = (minBank - diffWlBank).toFixed(2);
   const actualV = -diffWlBank;
-  const belowBankCm = Math.round(diffWlBank * 100);
+  const cm = Math.round(Math.abs(actualV) * 100);
+
+  let relativeText;
+  if (cm === 0) {
+    relativeText = 'เสมอระดับตลิ่ง';
+  } else if (actualV > 0) {
+    relativeText = `สูงกว่าตลิ่ง ${cm} ซม.`;
+  } else {
+    relativeText = `ต่ำกว่าตลิ่ง ${cm} ซม.`;
+  }
 
   return (
     `📉 น้ำลดลง ระดับน้ำสถานี${stationNameTh}\n\n` +
     `≈${waterlevelNow} ม. (เทียบ MSL)\n\n` +
-    `${formatV(actualV)} ม. (ต่ำกว่าตลิ่ง ${belowBankCm} ซม.)`
+    `${formatV(actualV)} ม. (${relativeText})`
   );
 }
 
@@ -235,7 +246,7 @@ async function sendLineMessage(message) {
 }
 
 // ------------------------- ประมวลผลขั้นบันไดของแต่ละช่องทาง -------------------------------
-// fallFn: (ไม่บังคับ) ฟังก์ชันส่งข้อความ "น้ำลดลง" เมื่อมีการรีเซ็ตและ V ต่ำกว่าเกณฑ์
+// fallFn: (ไม่บังคับ) ฟังก์ชันส่งข้อความ "น้ำลดลง" เมื่อมีการรีเซ็ต (ยกเว้น V ต่ำกว่าเกณฑ์หยุดส่ง)
 async function processLadder(channelName, levels, channelState, station, diffWlBank, sendFn, fallFn = null) {
   let changed = false;
   const crossed = [];   // ระดับที่เพิ่งข้ามเกณฑ์ในรอบนี้
@@ -278,17 +289,23 @@ async function processLadder(channelName, levels, channelState, station, diffWlB
     }
   }
 
-  // ---------- ข้อความ "น้ำลดลง": มีการรีเซ็ต + V ต่ำกว่าเกณฑ์ + ไม่มีการข้ามระดับใหม่ในรอบเดียวกัน ----------
+  // ---------- ข้อความ "น้ำลดลง": ทุกครั้งที่มีการรีเซ็ต ยกเว้น V ต่ำกว่าเกณฑ์หยุดส่ง ----------
+  // (ไม่ส่งถ้ามีการข้ามระดับใหม่ในรอบเดียวกัน เพื่อไม่ให้ได้ข้อความที่ขัดกัน)
   if (fallFn && resetIdx.length > 0 && crossed.length === 0) {
     const currentV = -diffWlBank;
 
-    if (currentV < CONFIG.TELEGRAM_FALL_MESSAGE_BELOW_V) {
+    if (currentV >= CONFIG.TELEGRAM_FALL_MESSAGE_STOP_BELOW_V) {
       const ok = await fallFn(buildFallMessage(station, diffWlBank));
       if (ok) {
         console.log(`[${channelName}] V=${currentV.toFixed(2)} ม. → ส่งข้อความน้ำลดลง`);
       } else {
         console.log(`[${channelName}] ส่งข้อความน้ำลดลงไม่สำเร็จ (ไม่ลองใหม่ เพราะรีเซ็ทสถานะไปแล้ว)`);
       }
+    } else {
+      console.log(
+        `[${channelName}] V=${currentV.toFixed(2)} ม. ต่ำกว่า ${CONFIG.TELEGRAM_FALL_MESSAGE_STOP_BELOW_V} ม. แล้ว` +
+        ` → ไม่ส่งข้อความน้ำลดลง (ปลอดภัยแล้ว)`
+      );
     }
   }
 
