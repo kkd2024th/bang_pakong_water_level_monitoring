@@ -3,6 +3,7 @@
  * ระบบแจ้งเตือนระดับน้ำสถานีบางปะกง — ขั้นบันไดตามตาราง
  * - V = ระดับน้ำเทียบตลิ่ง (+ สูงกว่าตลิ่ง / - ต่ำกว่าตลิ่ง) = -diff_wl_bank
  * - Telegram: ทุก 0.25 ม. ตั้งแต่ V=-1.0 ถึง +2.0
+ *             + แจ้ง "น้ำลดลง" เมื่อมีระดับถูกรีเซ็ตและ V ต่ำกว่า -0.5 ม.
  * - LINE:     ทุก 0.5 ม.  ตั้งแต่ V=-0.5 ถึง +2.0
  * - จุดรีเซ็ทของแต่ละระดับ = V ของระดับนั้น − 0.25
  * - ระดับ V < 0 ใช้ ⚠️ / ระดับ V ≥ 0 ใช้ 🚨
@@ -25,6 +26,9 @@ const CONFIG = {
 
   LINE_LEVEL_START_V: -0.5,
   LINE_LEVEL_STEP_V: 0.5,
+
+  // Telegram: ส่งข้อความ "น้ำลดลง" เมื่อมีการรีเซ็ต และ V ปัจจุบันต่ำกว่าค่านี้ (ม.)
+  TELEGRAM_FALL_MESSAGE_BELOW_V: -0.5,
 
   STATE_FILE: 'state.json',
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
@@ -133,11 +137,12 @@ async function setState(state) {
   await writeFile(CONFIG.STATE_FILE, JSON.stringify(state, null, 2));
 }
 
-// ------------------------- สร้างข้อความแจ้งเตือน -------------------------------
+// ------------------------- สร้างข้อความ -------------------------------
 function formatV(v) {
   return (v >= 0 ? '+' : '') + v.toFixed(2);
 }
 
+// ข้อความแจ้งเตือนเมื่อข้ามระดับ (น้ำสูงขึ้น)
 function buildAlertMessage(station, diffWlBank, level) {
   const stationNameTh = station.station.tele_station_name.th;
   const minBank = station.station.min_bank;
@@ -149,6 +154,21 @@ function buildAlertMessage(station, diffWlBank, level) {
     `${emoji} ระดับน้ำสถานี${stationNameTh}\n\n` +
     `≈${waterlevelNow} ม. (เทียบ MSL)\n\n` +
     `${formatV(actualV)} ม. (${actualV >= 0 ? 'สูงกว่าตลิ่ง' : 'ต่ำกว่าตลิ่ง'})`
+  );
+}
+
+// ข้อความ "น้ำลดลง" (Telegram)
+function buildFallMessage(station, diffWlBank) {
+  const stationNameTh = station.station.tele_station_name.th;
+  const minBank = station.station.min_bank;
+  const waterlevelNow = (minBank - diffWlBank).toFixed(2);
+  const actualV = -diffWlBank;
+  const belowBankCm = Math.round(diffWlBank * 100);
+
+  return (
+    `📉 น้ำลดลง ระดับน้ำสถานี${stationNameTh}\n\n` +
+    `≈${waterlevelNow} ม. (เทียบ MSL)\n\n` +
+    `${formatV(actualV)} ม. (ต่ำกว่าตลิ่ง ${belowBankCm} ซม.)`
   );
 }
 
@@ -215,7 +235,8 @@ async function sendLineMessage(message) {
 }
 
 // ------------------------- ประมวลผลขั้นบันไดของแต่ละช่องทาง -------------------------------
-async function processLadder(channelName, levels, channelState, station, diffWlBank, sendFn) {
+// fallFn: (ไม่บังคับ) ฟังก์ชันส่งข้อความ "น้ำลดลง" เมื่อมีการรีเซ็ตและ V ต่ำกว่าเกณฑ์
+async function processLadder(channelName, levels, channelState, station, diffWlBank, sendFn, fallFn = null) {
   let changed = false;
   const crossed = [];   // ระดับที่เพิ่งข้ามเกณฑ์ในรอบนี้
   const resetIdx = [];  // ระดับที่น้ำลดพ้นจุดรีเซ็ทในรอบนี้
@@ -231,7 +252,7 @@ async function processLadder(channelName, levels, channelState, station, diffWlB
     }
   }
 
-  // ---------- รีเซ็ทระดับที่น้ำลดพ้นจุดรีเซ็ท (ไม่ส่งข้อความ) ----------
+  // ---------- รีเซ็ทระดับที่น้ำลดพ้นจุดรีเซ็ท ----------
   if (resetIdx.length > 0) {
     resetIdx.forEach(i => { channelState.sentLevels[i] = false; });
     changed = true;
@@ -254,6 +275,20 @@ async function processLadder(channelName, levels, channelState, station, diffWlB
       );
     } else {
       console.log(`[${channelName}] ส่งแจ้งเตือนไม่สำเร็จ จะลองใหม่ในรอบถัดไป`);
+    }
+  }
+
+  // ---------- ข้อความ "น้ำลดลง": มีการรีเซ็ต + V ต่ำกว่าเกณฑ์ + ไม่มีการข้ามระดับใหม่ในรอบเดียวกัน ----------
+  if (fallFn && resetIdx.length > 0 && crossed.length === 0) {
+    const currentV = -diffWlBank;
+
+    if (currentV < CONFIG.TELEGRAM_FALL_MESSAGE_BELOW_V) {
+      const ok = await fallFn(buildFallMessage(station, diffWlBank));
+      if (ok) {
+        console.log(`[${channelName}] V=${currentV.toFixed(2)} ม. → ส่งข้อความน้ำลดลง`);
+      } else {
+        console.log(`[${channelName}] ส่งข้อความน้ำลดลงไม่สำเร็จ (ไม่ลองใหม่ เพราะรีเซ็ทสถานะไปแล้ว)`);
+      }
     }
   }
 
@@ -281,7 +316,8 @@ async function main() {
   console.log(`diff_wl_bank: ${diffWlBank} ม. (V = ${(-diffWlBank).toFixed(2)} ม.)`);
 
   const telegramChanged = await processLadder(
-    'Telegram', TELEGRAM_LEVELS, state.telegram, station, diffWlBank, sendTelegramMessage
+    'Telegram', TELEGRAM_LEVELS, state.telegram, station, diffWlBank,
+    sendTelegramMessage, sendTelegramMessage   // อาร์กิวเมนต์สุดท้าย = ส่งข้อความน้ำลดลง
   );
   const lineChanged = await processLadder(
     'LINE', LINE_LEVELS, state.line, station, diffWlBank, sendLineMessage
