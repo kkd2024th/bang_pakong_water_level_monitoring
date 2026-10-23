@@ -177,7 +177,7 @@ function buildFallMessage(station, diffWlBank) {
   }
 
   return (
-    `📉 น้ำลดลง ระดับน้ำสถานี${stationNameTh}\n\n` +
+    `📉 ระดับน้ำสถานี${stationNameTh} ลดลง\n\n` +
     `≈${waterlevelNow} ม. (เทียบ MSL)\n\n` +
     `${formatV(actualV)} ม. (${relativeText})`
   );
