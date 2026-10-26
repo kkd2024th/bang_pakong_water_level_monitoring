@@ -197,14 +197,15 @@ function getTimestampLine(item) {
 }
 
 // ข้อความแจ้งเตือนเมื่อข้ามระดับ (น้ำสูงขึ้น)
-function buildAlertMessage(stationName, item, V, level) {
+// withTimestamp = false จะไม่แสดงบรรทัดเวลา 🕒 (ใช้กับ LINE)
+function buildAlertMessage(stationName, item, V, level, withTimestamp = true) {
   const emoji = level.V >= 0 ? '🚨' : '⚠️';
-  return (
-    `${emoji} ระดับน้ำสถานี${stationName} 🔺\n\n` +
+  const body =
+    `${emoji} ระดับน้ำสถานี${stationName}\n\n` +
     mslLine(item, V) +
-    `${formatV(V)} ม. (${V >= 0 ? 'สูงกว่าตลิ่ง' : 'ต่ำกว่าตลิ่ง'})\n\n` +
-    getTimestampLine(item)
-  );
+    `${formatV(V)} ม. (${V >= 0 ? 'สูงกว่าตลิ่ง' : 'ต่ำกว่าตลิ่ง'})`;
+
+  return withTimestamp ? `${body}\n\n${getTimestampLine(item)}` : body;
 }
 
 // ข้อความ "น้ำลดลง" (Telegram)
@@ -287,7 +288,7 @@ async function sendLineMessage(message) {
 
 // ------------------------- ประมวลผลขั้นบันไดของแต่ละช่องทาง -------------------------------
 // fallFn: (ไม่บังคับ) ฟังก์ชันส่งข้อความ "น้ำลดลง"
-async function processLadder(channelName, levels, channelState, stationName, item, V, sendFn, fallFn = null) {
+async function processLadder(channelName, levels, channelState, stationName, item, V, sendFn, fallFn = null, withTimestamp = true) {
   let changed = false;
   const crossed = [];   // ระดับที่เพิ่งข้ามเกณฑ์ในรอบนี้
   const resetIdx = [];  // ระดับที่น้ำลดพ้นจุดรีเซ็ทในรอบนี้
@@ -313,7 +314,7 @@ async function processLadder(channelName, levels, channelState, stationName, ite
   // ---------- ข้ามระดับใหม่: ส่งข้อความเดียวต่อรอบ (ของระดับสูงสุดที่เพิ่งข้าม) ----------
   if (crossed.length > 0) {
     const topLevel = levels[crossed[crossed.length - 1]];
-    const ok = await sendFn(buildAlertMessage(stationName, item, V, topLevel));
+    const ok = await sendFn(buildAlertMessage(stationName, item, V, topLevel, withTimestamp));
 
     if (ok) {
       channelState.alertCount += 1;
@@ -399,8 +400,10 @@ async function main() {
     'Telegram', TELEGRAM_LEVELS, state.telegram, stationName, item, V,
     sendTelegramMessage, sendTelegramMessage   // อาร์กิวเมนต์สุดท้าย = ส่งข้อความน้ำลดลง
   );
+  
   const lineChanged = await processLadder(
-    'LINE', LINE_LEVELS, state.line, stationName, item, V, sendLineMessage
+    'LINE', LINE_LEVELS, state.line, stationName, item, V,
+    sendLineMessage, null, false   // fallFn = ไม่มี, withTimestamp = false (LINE ไม่แสดงเวลา)
   );
 
   if (telegramChanged || lineChanged) {
