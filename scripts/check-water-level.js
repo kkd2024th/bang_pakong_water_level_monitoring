@@ -352,6 +352,15 @@ async function processLadder(channelName, levels, channelState, stationName, ite
   return changed;
 }
 
+// อายุของข้อมูล (นาที) เทียบกับเวลาปัจจุบัน — waterlevel_datetime เป็นเวลาไทย (UTC+7)
+function getDataAgeMinutes(item) {
+  const m = String(item.waterlevel_datetime ?? '').match(/(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+  if (!m) return null;
+  const [, y, mo, d, h, mi] = m;
+  const dataUtcMs = Date.UTC(+y, +mo - 1, +d, +h, +mi) - 7 * 60 * 60 * 1000;
+  return Math.round((Date.now() - dataUtcMs) / 60000);
+}
+
 // ------------------------- ฟังก์ชันหลัก -------------------------------
 async function main() {
   const item = await fetchStationData();
@@ -375,10 +384,17 @@ async function main() {
   const state = await getState();
 
   console.log(
+    `ข้อมูล ณ ${item.waterlevel_datetime} (อายุ ${getDataAgeMinutes(item) ?? '?'} นาที) | ` +
+    `diff_wl_bank=${item.diff_wl_bank} (${String(item.diff_wl_bank_text).trim()}) → V = ${formatV(V)} ม.`
+  );
+
+  /*
+  console.log(
     `ข้อมูล ณ ${item.waterlevel_datetime} | diff_wl_bank=${item.diff_wl_bank} ` +
     `(${String(item.diff_wl_bank_text).trim()}) → V = ${formatV(V)} ม.`
   );
-
+  */
+  
   const telegramChanged = await processLadder(
     'Telegram', TELEGRAM_LEVELS, state.telegram, stationName, item, V,
     sendTelegramMessage, sendTelegramMessage   // อาร์กิวเมนต์สุดท้าย = ส่งข้อความน้ำลดลง
