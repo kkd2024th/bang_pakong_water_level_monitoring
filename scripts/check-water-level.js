@@ -144,42 +144,50 @@ function formatV(v) {
   return (v >= 0 ? '+' : '') + v.toFixed(2);
 }
 
-// ข้อความแจ้งเตือนเมื่อข้ามระดับ (น้ำสูงขึ้น)
-function buildAlertMessage(station, diffWlBank, level) {
-  const stationNameTh = station.station.tele_station_name.th;
-  const minBank = station.station.min_bank;
-  const waterlevelNow = (minBank - diffWlBank).toFixed(2);
-  const actualV = -diffWlBank;
-  const emoji = level.V >= 0 ? '🚨' : '⚠️';
+// ------------------------- Time stamp: DD/MM/YYYY HH:MM (พ.ศ.) -------------------------------
+function getTimestampLine(item) {
+  // เวลาของข้อมูลจาก API (เป็นเวลาไทยอยู่แล้ว เช่น "2026-10-04 21:00")
+  const m = String(item.waterlevel_datetime ?? '').match(/(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+  if (m) {
+    const [, y, mo, d, h, mi] = m;
+    return `🕒 ${d}/${mo}/${Number(y) + 543} ${h}:${mi}`;
+  }
 
+  // สำรอง: ไม่มีเวลาของข้อมูล → ใช้เวลาปัจจุบัน (Asia/Bangkok)
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Bangkok',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+    }).formatToParts(new Date()).map(x => [x.type, x.value])
+  );
+  return `🕒 ${p.day}/${p.month}/${Number(p.year) + 543} ${p.hour}:${p.minute}`;
+}
+
+// ข้อความแจ้งเตือนเมื่อข้ามระดับ (น้ำสูงขึ้น)
+function buildAlertMessage(stationName, item, V, level) {
+  const emoji = level.V >= 0 ? '🚨' : '⚠️';
   return (
-    `${emoji} ระดับน้ำสถานี${stationNameTh}\n\n` +
-    `≈${waterlevelNow} ม. (เทียบ MSL)\n\n` +
-    `${formatV(actualV)} ม. (${actualV >= 0 ? 'สูงกว่าตลิ่ง' : 'ต่ำกว่าตลิ่ง'})`
+    `${emoji} ระดับน้ำสถานี${stationName}\n\n` +
+    mslLine(item, V) +
+    `${formatV(V)} ม. (${V >= 0 ? 'สูงกว่าตลิ่ง' : 'ต่ำกว่าตลิ่ง'})\n\n` +
+    getTimestampLine(item)
   );
 }
 
-// ข้อความ "น้ำลดลง" (Telegram) — รองรับทั้งกรณีที่ยังสูงกว่าตลิ่งและต่ำกว่าตลิ่งแล้ว
-function buildFallMessage(station, diffWlBank) {
-  const stationNameTh = station.station.tele_station_name.th;
-  const minBank = station.station.min_bank;
-  const waterlevelNow = (minBank - diffWlBank).toFixed(2);
-  const actualV = -diffWlBank;
-  const cm = Math.round(Math.abs(actualV) * 100);
-
+// ข้อความ "น้ำลดลง" (Telegram)
+function buildFallMessage(stationName, item, V) {
+  const cm = Math.round(Math.abs(V) * 100);
   let relativeText;
-  if (cm === 0) {
-    relativeText = 'เสมอระดับตลิ่ง';
-  } else if (actualV > 0) {
-    relativeText = `สูงกว่าตลิ่ง ${cm} ซม.`;
-  } else {
-    relativeText = `ต่ำกว่าตลิ่ง ${cm} ซม.`;
-  }
+  if (cm === 0) relativeText = 'เสมอระดับตลิ่ง';
+  else if (V > 0) relativeText = `สูงกว่าตลิ่ง ${cm} ซม.`;
+  else relativeText = `ต่ำกว่าตลิ่ง ${cm} ซม.`;
 
   return (
-    `📉 ระดับน้ำสถานี${stationNameTh} ลดลง\n\n` +
-    `≈${waterlevelNow} ม. (เทียบ MSL)\n\n` +
-    `${formatV(actualV)} ม. (${relativeText})`
+    `📉 น้ำลดลง ระดับน้ำสถานี${stationName}\n\n` +
+    mslLine(item, V) +
+    `${formatV(V)} ม. (${relativeText})\n\n` +
+    getTimestampLine(item)
   );
 }
 
