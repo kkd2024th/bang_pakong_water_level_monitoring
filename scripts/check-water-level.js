@@ -201,7 +201,7 @@ function getTimestampLine(item) {
 function buildAlertMessage(stationName, item, V, level, withTimestamp = true) {
   const emoji = level.V >= 0 ? '🚨' : '⚠️';
   const body =
-    `${emoji} ระดับน้ำสถานี${stationName}\n\n` +
+    `${emoji} ระดับน้ำสถานี${stationName}🔺\n\n` +
     mslLine(item, V) +
     `${formatV(V)} ม. (${V >= 0 ? 'สูงกว่าตลิ่ง' : 'ต่ำกว่าตลิ่ง'})`;
 
@@ -217,7 +217,7 @@ function buildFallMessage(stationName, item, V) {
   else relativeText = `ต่ำกว่าตลิ่ง`;
 
   return (
-    `ℹ️ ระดับน้ำสถานี${stationName} 🔻\n\n` +
+    `ℹ️ ระดับน้ำสถานี${stationName}🔻\n\n` +
     mslLine(item, V) +
     `${formatV(V)} ม. (${relativeText})\n\n` +
     getTimestampLine(item)
