@@ -3,7 +3,7 @@
  * ระบบแจ้งเตือนระดับน้ำสถานีบางปะกง — ขั้นบันไดตามตาราง
  * - V = ระดับน้ำเทียบตลิ่ง (+ สูงกว่าตลิ่ง / - ต่ำกว่าตลิ่ง)
  *   (diff_wl_bank ของ API เป็นขนาดเฉยๆ ทิศทางดูจาก diff_wl_bank_text)
- * - Telegram: ทุก 0.25 ม. ตั้งแต่ V=-0.75 ถึง +2.0
+ * - Telegram: ทุก 0.25 ม. ตั้งแต่ V=-1.0 ถึง +2.0
  *             + "น้ำลดลง" เมื่อมีระดับรีเซ็ต (ยกเว้นระดับเริ่มต้น = ปลอดภัยแล้ว)
  * - LINE:     ทุก 0.5 ม.  ตั้งแต่ V=-0.5 ถึง +2.0
  * - จุดรีเซ็ทของแต่ละระดับ = V ของระดับนั้น − 0.25
@@ -19,14 +19,14 @@ const CONFIG = {
   STATION_ID: 154,
 
   // ------------------------- ตั้งค่าขั้นบันได (ตรงตามตาราง) -------------------------
-  LEVEL_RESET_BUFFER_V: 0.25,   // รีเซ็ทเมื่อ V ลดลงจากระดับนั้นเท่านี้ (ม.)
-  LEVEL_END_V: 2.0,             // ระดับสูงสุดที่กำหนดไว้
+  LEVEL_RESET_BUFFER_V: 0.25,  // รีเซ็ทเมื่อ V ลดลงจากระดับนั้นเท่านี้ (ม.)
+  LEVEL_END_V: 2.0,  // ระดับสูงสุดที่กำหนดไว้
 
-  TELEGRAM_LEVEL_START_V: -1.0,
-  TELEGRAM_LEVEL_STEP_V: 0.25,
+  TELEGRAM_LEVEL_START_V: -1.0,  // ระดับน้ำที่จะเริ่มส่งข้อความ Telegram
+  TELEGRAM_LEVEL_STEP_V: 0.25,  // ช่วงของระดับน้ำใน Telegram
 
-  LINE_LEVEL_START_V: -0.5,
-  LINE_LEVEL_STEP_V: 0.5,
+  LINE_LEVEL_START_V: -0.5,  // ระดับน้ำที่จะเริ่มส่งข้อความ LINE
+  LINE_LEVEL_STEP_V: 0.5,  // ช่วงของระดับน้ำใน LINE
 
   // Telegram: ส่ง "น้ำลดลง" เมื่อมีระดับรีเซ็ตที่ V สูงกว่าค่านี้
   // (รีเซ็ตระดับที่ V เท่ากับหรือต่ำกว่าค่านี้ ไม่ส่ง เพราะถือว่าปลอดภัยแล้ว)
@@ -212,8 +212,8 @@ function buildFallMessage(stationName, item, V) {
   const cm = Math.round(Math.abs(V) * 100);
   let relativeText;
   if (cm === 0) relativeText = 'เสมอระดับตลิ่ง';
-  else if (V > 0) relativeText = `สูงกว่าตลิ่ง ${cm} ซม.`;
-  else relativeText = `ต่ำกว่าตลิ่ง ${cm} ซม.`;
+  else if (V > 0) relativeText = `สูงกว่าตลิ่ง`;
+  else relativeText = `ต่ำกว่าตลิ่ง`;
 
   return (
     `📉 ระดับน้ำสถานี${stationName} ลดลง\n\n` +
