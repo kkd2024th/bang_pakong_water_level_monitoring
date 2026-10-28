@@ -3,7 +3,7 @@
     "sentLevels": [
       true,
       true,
-      false,
+      true,
       false,
       false,
       false,
@@ -15,17 +15,17 @@
       false,
       false
     ],
-    "alertCount": 22
+    "alertCount": 23
   },
   "line": {
     "sentLevels": [
-      false,
+      true,
       false,
       false,
       false,
       false,
       false
     ],
-    "alertCount": 4
+    "alertCount": 5
   }
 }
