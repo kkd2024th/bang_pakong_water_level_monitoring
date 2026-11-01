@@ -3,7 +3,7 @@
     "sentLevels": [
       true,
       true,
-      true,
+      false,
       false,
       false,
       false,
@@ -19,7 +19,7 @@
   },
   "line": {
     "sentLevels": [
-      true,
+      false,
       false,
       false,
       false,
