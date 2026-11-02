@@ -20,17 +20,17 @@ const CONFIG = {
 
   // ------------------------- ตั้งค่าขั้นบันได (ตรงตามตาราง) -------------------------
   LEVEL_RESET_BUFFER_V: 0.25,  // รีเซ็ทเมื่อ V ลดลงจากระดับนั้นเท่านี้ (ม.)
-  LEVEL_END_V: 2.0,  // ระดับสูงสุดที่กำหนดไว้
+  LEVEL_END_V: 5.0,  // ระดับสูงสุดที่กำหนดไว้
 
-  TELEGRAM_LEVEL_START_V: -1.0,  // ระดับน้ำที่จะเริ่มส่งข้อความ Telegram
+  TELEGRAM_LEVEL_START_V: -0.5,  // ระดับน้ำที่จะเริ่มส่งข้อความ Telegram
   TELEGRAM_LEVEL_STEP_V: 0.25,  // ช่วงของระดับน้ำใน Telegram
 
-  LINE_LEVEL_START_V: -0.5,  // ระดับน้ำที่จะเริ่มส่งข้อความ LINE
-  LINE_LEVEL_STEP_V: 0.5,  // ช่วงของระดับน้ำใน LINE
+  LINE_LEVEL_START_V: 0,  // ระดับน้ำที่จะเริ่มส่งข้อความ LINE
+  LINE_LEVEL_STEP_V: 0.3,  // ช่วงของระดับน้ำใน LINE
 
   // Telegram: ส่ง "น้ำลดลง" เมื่อมีระดับรีเซ็ตที่ V สูงกว่าค่านี้
   // (รีเซ็ตระดับที่ V เท่ากับหรือต่ำกว่าค่านี้ ไม่ส่ง เพราะถือว่าปลอดภัยแล้ว)
-  TELEGRAM_FALL_MESSAGE_STOP_BELOW_V: -1.0,
+  TELEGRAM_FALL_MESSAGE_STOP_BELOW_V: -0.75,
 
   STATE_FILE: 'state.json',
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
